@@ -139,38 +139,6 @@ def detect_click(evt: gr.SelectData):
     return gr.update(open=False)
 
 
-'''chart_titles = [
-    "Pipeline Throughput [FPS]",
-    "CPU Frequency [KHz]",
-    "CPU Utilization [%]",
-    "CPU Temperature [C°]",
-    "Memory Utilization [%]",
-    "GPU Package Power Usage [W]",
-    "GPU Power Usage [W]",
-    "GPU Frequency [MHz]",
-    "GPU Render Engine Utilization [%]",
-    "GPU Video Enhance Engine Utilization [%]",
-    "GPU Video Engine Utilization [%]",
-    "GPU Copy Engine Utilization [%]",
-    "GPU Compute Engine Utilization [%]"
-]
-
-y_labels = [
-    "Throughput", 
-    "Frequency",
-    "Utilization",
-    "Temperature",
-    "Utilization",
-    "Power", 
-    "Power",
-    "Frequency",
-    "Utilization",
-    "Utilization",
-    "Utilization",
-    "Utilization",
-    "Utilization"
-]'''
-
 chart_titles = [
     "Pipeline Throughput [FPS]",
     "CPU Frequency [KHz]",
@@ -195,10 +163,12 @@ y_labels = [
 
 # Create a dataframe for each chart
 stream_dfs = [pd.DataFrame(columns=["x", "y"]) for _ in range(len(chart_titles))]
-def detect_gpu_engines_dynamic():
+
+
+def detect_gpu_engines_dynamic(chart_titles, y_labels, stream_dfs, metrics_file="/home/dlstreamer/vippet/.collector-signals/metrics.txt"):
     try:
-        with open("/home/dlstreamer/vippet/.collector-signals/metrics.txt", "r") as f:
-            lines = [line.strip() for line in f.readlines()[-500:]]
+        with open(metrics_file, "r") as f:
+            lines = [line.strip() for line in f.readlines()[-100:]]
     except FileNotFoundError:
         return []
 
@@ -208,8 +178,16 @@ def detect_gpu_engines_dynamic():
             for part in line.split(","):
                 if part.startswith("engine="):
                     engine_name = part.split("=")[1]
-                    engines.add(engine_name)
+                    if engine_name not in engines:
+                        engines.add(engine_name)
+                        
+                        
+                        chart_titles.append(f"GPU {engine_name.capitalize()} Engine Utilization [%]")
+                        y_labels.append("Utilization")
+                        stream_dfs.append(pd.DataFrame(columns=["x", "y"]))
+
     return sorted(engines)
+
 
 
 def read_latest_metrics(target_ns: int = None):
@@ -229,11 +207,6 @@ def read_latest_metrics(target_ns: int = None):
         ]
         lines = surrounding_lines if surrounding_lines else []
   
-
-
-    '''cpu_user = mem_used_percent = gpu_package_power = core_temp = gpu_power = None
-    gpu_freq = cpu_freq = gpu_render = gpu_ve = gpu_video = gpu_copy =  gpu_compute = None
-    '''
     cpu_user = mem_used_percent = gpu_package_power = core_temp = gpu_power = None
     gpu_freq = cpu_freq = None
     
@@ -299,18 +272,30 @@ def read_latest_metrics(target_ns: int = None):
             except:
                 pass
         elif "engine_usage" in line and "engine=" in line and "usage=" in line:
+            try:
+                tags_part, fields_part, _ = line.strip().split(" ", 2)
+            except ValueError:
+                continue 
+            
+            #Parse after 'engine_usage,'
+            tags = tags_part.split(",")[1:]  
             engine = None
+            for tag in tags:
+                if tag.startswith("engine="):
+                    engine = tag.split("=")[1]
+
+            #After fields part parse
             usage = None
-            for part in line.split():
-                if part.startswith("engine="):
-                    engine = part.split("=")[1]
-                elif part.startswith("usage="):
+            for field in fields_part.split(","):
+                if field.startswith("usage="):
                     try:
-                        usage = float(part.split("=")[1])
+                        usage = float(field.split("=")[1])
                     except ValueError:
-                        usage = None
+                        pass
+
             if engine and usage is not None and engine not in gpu_engines:
                 gpu_engines[engine] = usage
+
 
         if (
             all(val is not None for val in [cpu_user, mem_used_percent, gpu_package_power, core_temp, gpu_power, gpu_freq, cpu_freq])
@@ -318,55 +303,6 @@ def read_latest_metrics(target_ns: int = None):
         ):
             break
 
-        
-        '''if gpu_render is None and "engine=render" in line:
-            for part in line.split():
-                if part.startswith("usage="):
-                    try:
-                        gpu_render = float(part.split("=")[1])
-                    except:
-                        pass
-
-        if gpu_copy is None and "engine=copy" in line:
-            for part in line.split():
-                if part.startswith("usage="):
-                    try:
-                        gpu_copy = float(part.split("=")[1])
-                    except:
-                        pass
-
-        if gpu_ve is None and "engine=video-enhance" in line:
-            for part in line.split():
-                if part.startswith("usage="):
-                    try:
-                        gpu_ve = float(part.split("=")[1])
-                    except:
-                        pass
-
-        if gpu_video is None and "engine=video" in line and "video-enhance" not in line:
-            for part in line.split():
-                if part.startswith("usage="):
-                    try:
-                        gpu_video = float(part.split("=")[1])
-                    except:
-                        pass
-        
-        if gpu_compute is None and "engine=compute" in line:
-            for part in line.split():
-                if part.startswith("usage="):
-                    try:
-                        gpu_compute = float(part.split("=")[1])
-                    except:
-                        pass'''
-        
-        '''if all(v is not None for v in [
-            cpu_user, mem_used_percent, gpu_package_power, core_temp, gpu_power,
-            gpu_freq, gpu_render, gpu_ve, gpu_video, gpu_copy, cpu_freq, gpu_compute]):
-            break'''
-    '''return [
-        cpu_user, mem_used_percent, gpu_package_power, core_temp, gpu_power,
-        gpu_freq, gpu_render, gpu_ve, gpu_video, gpu_copy, cpu_freq, gpu_compute
-    ]'''
         
     return [
         cpu_user, mem_used_percent, gpu_package_power, core_temp, gpu_power,
@@ -377,11 +313,7 @@ def read_latest_metrics(target_ns: int = None):
 
 
 def create_empty_fig(title, y_axis_label):
-    gpu_engines = detect_gpu_engines_dynamic()
-
-    for engine in gpu_engines:
-        chart_titles.append(f"GPU {engine.capitalize()} Engine Utilization [%]")
-        y_labels.append(f"Utilization")
+    
     fig = go.Figure()
     fig.update_layout(
         title=title,
@@ -397,6 +329,12 @@ figs = [
     for i in range(len(chart_titles))
 ]
 
+def regenerate_figs():
+    global figs
+    figs = [
+        create_empty_fig(chart_titles[i], y_labels[i])
+        for i in range(len(chart_titles))
+    ]
 
 def generate_stream_data(i, timestamp_ns=None):
     new_x = datetime.now() if timestamp_ns is None else datetime.fromtimestamp(timestamp_ns / 1e9)
@@ -417,12 +355,9 @@ def generate_stream_data(i, timestamp_ns=None):
     
     except IndexError:
         latest_fps = 0
-
+    global chart_titles
     title = chart_titles[i]
-    engine_to_title = {
-        engine: f"GPU {engine.capitalize()} Engine Utilization [%]"
-        for engine in gpu_engines
-}
+    
     if title == "Pipeline Throughput [FPS]":
         new_y = latest_fps
     elif title == "CPU Frequency [KHz]" and cpu_freq is not None:
@@ -447,23 +382,13 @@ def generate_stream_data(i, timestamp_ns=None):
                 break  # match found, no need to check other engines
 
 
-    '''elif title == "GPU Render Engine Utilization [%]" and gpu_render is not None:
-        new_y = gpu_render
-    elif title == "GPU Video Enhance Engine Utilization [%]" and gpu_ve is not None:
-        new_y = gpu_ve
-    elif title == "GPU Video Engine Utilization [%]" and gpu_video is not None:
-        new_y = gpu_video
-    elif title == "GPU Copy Engine Utilization [%]" and gpu_copy is not None:
-        new_y = gpu_copy
-    elif title == "GPU Compute Engine Utilization [%]" and gpu_compute is not None:
-        new_y = gpu_compute'''
-
     new_row = pd.DataFrame([[new_x, new_y]], columns=["x", "y"])
+    
     stream_dfs[i] = pd.concat(
         [stream_dfs[i] if not stream_dfs[i].empty else None, new_row], 
         ignore_index=True
     ).tail(50)
-
+    global figs
     fig = figs[i]
     fig.data = []  # clear previous trace
     fig.add_trace(go.Scatter(x=stream_dfs[i]["x"], y=stream_dfs[i]["y"], mode="lines"))
@@ -681,6 +606,12 @@ def create_interface():
 
                 # Metrics plots
                 with gr.Row():
+                    global chart_titles
+                    global y_labels 
+                    global stream_dfs
+
+                    detect_gpu_engines_dynamic(chart_titles, y_labels, stream_dfs)
+                    
                     plots = [
                         gr.Plot(
                             value=create_empty_fig(chart_titles[i], y_labels[i]), label=chart_titles[i],
@@ -689,8 +620,12 @@ def create_interface():
                         )
                         for i in range(len(chart_titles))
                     ]
+                    regenerate_figs()
                     timer = gr.Timer(1, active=False)
+                    
                     def update_all_plots():
+                        global chart_titles
+                        
                         return [generate_stream_data(i) for i in range(len(chart_titles))]
 
                     timer.tick(update_all_plots, outputs=plots)
@@ -709,7 +644,9 @@ def create_interface():
                     input_video_player,
                 ):
                     global stream_dfs
+                    global chart_titles
                     stream_dfs = [pd.DataFrame(columns=["x", "y"]) for _ in range(len(chart_titles))]  # Reset all data
+                    
                     gr.update(active=True)
 
                     # Reset the FPS file
@@ -757,6 +694,7 @@ def create_interface():
                     )
                     optimizer.optimize()
                     best_result = optimizer.evaluate()
+                    
                     plot_updates = [generate_stream_data(i) for i in range(len(chart_titles))]
 
                     best_result_message = (
