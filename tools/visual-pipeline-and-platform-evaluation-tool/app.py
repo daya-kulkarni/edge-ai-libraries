@@ -487,10 +487,13 @@ def create_interface():
         label="Object Detection Model",
         choices=[
             "SSDLite MobileNet V2",
-            "YOLO v5m",
-            "YOLO v5s",
+            "YOLO v5m 416x416",
+            "YOLO v5s 416x416",
+            "YOLO v5m 640x640",
+            "YOLO v10s 640x640",
+            "YOLO v10m 640x640",
         ],
-        value="YOLO v5s",
+        value="YOLO v5s 416x416",
     )
 
     # Object detection device
@@ -835,9 +838,10 @@ def create_interface():
     return demo
 
 
-# Launch the app
-demo = create_interface()
-demo.launch(
-    server_name="0.0.0.0",
-    server_port=7860,
-)
+if __name__ == "__main__":
+    # Launch the app
+    demo = create_interface()
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+    )
